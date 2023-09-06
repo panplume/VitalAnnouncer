@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title : Vital Announcer
+## Notes: Announce vital spell miss and successfull kick
+## Author: 
+## Version: 1.0
+## Dependencies: 
+## SavedVariablesPerCharacter: VitalAnnouncerPCDB
+
+VitalAnnouncer.lua
