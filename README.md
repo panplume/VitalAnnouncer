@@ -1,4 +1,4 @@
-#VitalAnnouncer
+# VitalAnnouncer
 
 ![VitalAnnouncer beartastrophe](/VA.png)
 
@@ -11,7 +11,7 @@ Additionally the addon reports *spell steal* et *purge*.
 
 ![VitalAnnouncer option panel](/VAOptionPanel.png)
 
-#Command line usage (/va or /vitalannouncer)
+# Command line usage (/va or /vitalannouncer)
 
 | Command                      | Description                            |
 |------------------------------|----------------------------------------|
@@ -23,7 +23,7 @@ Additionally the addon reports *spell steal* et *purge*.
 | /va reset                    | Return all values to defaults          |
 | /va                          | Open the option panel to choose spells |
 
-#Command line example:
+# Command line example:
 
 ```
 /join UwUwarrior
