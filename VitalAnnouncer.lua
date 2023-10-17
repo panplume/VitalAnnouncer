@@ -13,6 +13,67 @@ local defaults = {
 local f = CreateFrame("frame", "VitalAnnouncer", UIParent)
 f.panelSetupDone = false
 
+--remember spell casting toward party member to link with
+--Grounding Totem death
+f.enemyCastIdx = 1
+f.enemyCasting = {}
+
+--debug
+local function displaySpells(t)
+  for idx, spellTable in pairs(t) do
+    print("  ", spellTable[1], spellTable[2], spellTable[3], spellTable[4], spellTable[5], spellTable[6])
+  end
+end
+
+--do we know this spell (multiple event report)
+local function findEnemySpell(enemyName, target, spellText, texture, startTime, endTime)
+  local t = {enemyName, target, spellText, texture, startTime, endTime}
+  for idx, spellTable in pairs(f.enemyCasting) do
+    local theOne = true
+    for i, v in ipairs(spellTable) do
+      if t[i] ~= v then
+	theOne = false
+	break
+      end
+    end
+    if theOne then return true end
+  end
+  return false
+end
+
+--return spells which should be done casting by now
+local function pastEnemySpells()
+  local now = 1000*GetTime()
+  local result = {}
+  for idx, spellTable in pairs(f.enemyCasting) do
+    if spellTable[6] <= now then
+      table.insert(result, spellTable)
+    end
+  end
+  return result
+end
+
+--remove old spells with endtime more than howOld seconds in the past
+--think of howOld as a travel time
+local function removeOldSpells(howOld)
+  local now = 1000*GetTime()
+  local compactIdx = 1 --move item to keep at this index
+  for idx = 1, #f.enemyCasting do
+    --keep if endTime is not in the past
+    if (f.enemyCasting[idx][6] + 1000*(howOld or 0)) > now then
+      if idx ~= compactIdx then --need compacting
+	f.enemyCasting[compactIdx] = f.enemyCasting[idx]
+	f.enemyCasting[idx] = nil
+      end
+      compactIdx = compactIdx + 1
+    else --remove
+      f.enemyCasting[idx] = nil
+    end
+  end
+  f.enemyCastIdx = compactIdx
+end
+
+
 SLASH_VITALANNOUNCER1 = "/vitalannouncer"
 SLASH_VITALANNOUNCER2 = "/va"
 SlashCmdList.VITALANNOUNCER = function(msg, editBox)
@@ -213,12 +274,82 @@ local function OnEvent(self, event, ...)
     
     f:InitializeOptions()
     f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+    --grounding totem for unit someone is targetting (untargeted will only
+    --have CLEU event, so no target but the flag may tell if destination is
+    --in my group)
+    --FIXME: changing group will break (reset enemyCasting?)
+    f:RegisterEvent("UNIT_SPELLCAST_START")
+    f:RegisterEvent("UNIT_SPELLCAST_STOP")
+    f:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+  elseif (event == "UNIT_SPELLCAST_START" or
+	  event == "UNIT_SPELLCAST_STOP" or
+	  event == "UNIT_SPELLCAST_SUCCEEDED") and f.db.enabled then
+    --a unitID is casting, _START fires before CLEU event
+    local unitTarget, spellName = select(1,...)
+    --clean up old spells we didn't catch (mostly on stop/succeeded)
+    if #self.enemyCasting > 1 then
+      removeOldSpells(3) --allow for 3s travel time before forgetting spell
+    end
+    --enemy is targetting someone in my group
+    --FIXME: will report unknown spell if cast on totem directly (low prio)
+    if (event == "UNIT_SPELLCAST_START" and
+	UnitIsEnemy(unitTarget, "player") and
+	UnitInParty(unitTarget.."target")) then
+      local spellName, nameSubtext, spellText, texture, startTime, endTime, isTradeSkill, castID, notInterruptible = UnitCastingInfo(unitTarget)
+      local enemyName = UnitName(unitTarget)
+      local target = UnitName(unitTarget.."target")
+      --spell event will be reported for every unitId, add only one
+      if not findEnemySpell(enemyName, target, spellText, texture, startTime, endTime) then
+	self.enemyCasting[self.enemyCastIdx] = {enemyName, target, spellText, texture, startTime, endTime}
+	self.enemyCastIdx = self.enemyCastIdx + 1
+      end
+    end
   elseif event == "COMBAT_LOG_EVENT_UNFILTERED" and f.db.enabled then
     local timestamp,e,uid,name,_,targetGUID,target,destFlags,sID,spell,_,reason = select(1,...)
     local playerID = UnitGUID("player")
     local petID = UnitGUID("pet")
 
-    if e == "SPELL_CAST_SUCCESS" then
+    --TODO: add SPELL_SUMMON to detect totem spawn/replacement
+    --      add SWING_DAMAGE to filter spell/melee kill
+    --      add SPELL_CAST_SUCCESS of Totemic Call for totem end
+    --      add PLAYER_TOTEM_UPDATE for timeout
+    -- for better spell list cleaning, reducing multiple spell flying report
+    if e == "UNIT_DIED" and target == "Grounding Totem" then
+      if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 then
+	--find spell with endTime in the past
+	local spells = pastEnemySpells()
+	if #spells == 0 then
+	  --report unknown reason (mostly nobody targetting caster)
+	  output = "grounded unknown spell"
+	  SendChatMessage(output, f.db.chat, nil, f.db.chan)
+	elseif #spells == 1 then
+	  local spellName = spells[1][3]
+	  local casterName = spells[1][1]
+	  local targetName = spells[1][2]
+	  output = "grounded "..spellName.." from <"..casterName..">"
+	  if targetName ~= "" then --instant cast has no target
+	    output = output.." > <"..spells[1][2]..">"
+	  end
+	  SendChatMessage(output, f.db.chat, nil, f.db.chan)
+	  removeOldSpells()
+	else --multiple spells are flying, no way to get the one we grounded
+	  output = "grounded one of "..spells[1][3]
+	  for idx = 2, #spells do
+	    output = output..", "..spells[idx][3]
+	  end
+	  SendChatMessage(output, f.db.chat, nil, f.db.chan)
+	  removeOldSpells()
+	end
+      end
+    elseif e == "SPELL_CAST_SUCCESS" then
+      --grounding for instant spell
+      if (target == "Grounding Totem" and
+	  bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0) then
+	removeOldSpells()
+	local now = 1000*GetTime()
+	self.enemyCasting[self.enemyCastIdx] = {name, "", spell, "", now, now}
+	self.enemyCastIdx = self.enemyCastIdx + 1
+      end
       --check kick
       --TODO:druid-maim with late PvP gloves, rogue-deadly throw with pvp gloves, rogue-stealth-garrote rank7/8
       for spellName, spellAnnounce in pairs(f.db["kicks"]) do

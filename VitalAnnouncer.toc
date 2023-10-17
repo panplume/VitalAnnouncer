@@ -1,7 +1,7 @@
 ## Interface: 30300
 ## Title : Vital Announcer
 ## Notes: Announce vital spell miss and successfull kick
-## Author: 
+## Author: Panplume
 ## Version: 1.0
 ## Dependencies: 
 ## SavedVariablesPerCharacter: VitalAnnouncerPCDB
