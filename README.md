@@ -7,7 +7,7 @@ Report important spells for others to see. You can toggle which one will be repo
 1. Spell you cast but missed (important debuff)
 1. Interrupt you made
 
-Additionally the addon reports *spell steal* et *purge*.
+Additionally the addon reports *grounding totem*, *spell steal* and *purge*.
 
 ![VitalAnnouncer option panel](/VAOptionPanel.png)
 
